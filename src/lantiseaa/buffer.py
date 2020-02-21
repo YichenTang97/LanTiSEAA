@@ -57,11 +57,11 @@ class Buffer(ABC):
 
 
 
-    def save_prediction(self, pred_df, method_name, fold_number, train_test, key='prediction', surfix=None):
+    def save_prediction(self, pred_df, method_name, key='prediction', fold_number=None, train_test=None, surfix=None):
         self.save_result(pred_df, key, data_type='result', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 
-    def read_prediction(self, method_name, fold_number, train_test, key='prediction', surfix=None):
+    def read_prediction(self, method_name, key='prediction', fold_number=None, train_test=None, surfix=None):
         return self.read_result(key, data_type='result', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 

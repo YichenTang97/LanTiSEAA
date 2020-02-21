@@ -19,27 +19,28 @@ def split_text(text):
 class BaseVectorizerClassifier():
 
     def __init__(self, vectorizer, classifier):
-        self.vectorizer = vectorizer
-        self.clf = classifier
+        self.vectorizer_ = vectorizer
+        self.clf_ = classifier
     
     def fit(self, X, y):
         # train count vectorizer
-        cv_train = self.vectorizer.fit_transform(X)
+        cv_train = self.vectorizer_.fit_transform(X)
         # train classifier
-        self.clf.fit(cv_train, y)
+        self.clf_.fit(cv_train, y)
+        self.classes_ = self.clf_.classes_
         return self
     
     def predict_proba(self, X):
         # vectorization
-        cv_X = self.vectorizer.transform(X)
+        cv_X = self.vectorizer_.transform(X)
         # prediction
-        return self.clf.predict_proba(cv_X)
+        return self.clf_.predict_proba(cv_X)
 
     def predict(self, X):
         # vectorization
-        cv_X = self.vectorizer.transform(X)
+        cv_X = self.vectorizer_.transform(X)
         # prediction
-        return self.clf.predict(cv_X)
+        return self.clf_.predict(cv_X)
 
 
 ######### Bag-of-words based methods #########
