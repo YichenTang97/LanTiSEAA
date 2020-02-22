@@ -1,4 +1,5 @@
 import os
+import copy
 import errno
 import pandas as pd
 from sklearn.externals import joblib
@@ -260,7 +261,7 @@ class MemoryBuffer(Buffer):
         if surfix is not None:
             key += '__{}'.format(surfix)
 
-        self.classes_.update({key: c})
+        self.classes_.update({key: copy.deepcopy(c)})
 
 
     def read_class(self, method_name, class_name, subclass_name=None, fold_number=None, surfix=None):
