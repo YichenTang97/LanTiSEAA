@@ -2,6 +2,8 @@
 import logging
 import numpy as np
 import pandas as pd
+import pymc3 as pm
+from scipy.stats import wilcoxon
 from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import GradientBoostingClassifier
@@ -195,7 +197,7 @@ class LanTiSEAA():
         combined_name = "_".join(self.feature_groups_)
 
         # select and save relevant features 
-        self.relevant_features_ = self.feature_extractor.select_relevant_features(X_combined)
+        self.relevant_features_ = self.feature_extractor.select_relevant_features(X_combined, y)
         self.buffer.save_feature_relevance_table(self.relevant_features_, method_name=combined_name)
         X_relevant = X_combined[self.relevant_features_.feature]
 
@@ -424,7 +426,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
                  ts_transformers=[TokenLenFreqTransformer(), TokenLenSeqTransformer(), WordCntVecTransformer(), TokenFreqTransformer(), TokenFreqRankTransformer()], \
                  feature_extractor=TsfreshTSFeatureExtractor(), baseline_classifier=BOWMNB(), \
                  meta_classifier=GradientBoostingClassifier(), cv=None, \
-                 metric=log_loss, needs_proba=True, greater_is_better=False, \
+                 metric=log_loss, greater_is_better=False, \ # TODO allow metric that works on non-probablistic predictions - (needs_proba=True, )
                  buffer=MemoryBuffer(), random_state=None):
         """Construct new LanTiSEAA object
 
@@ -466,7 +468,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
         metric : sklearn.metric, optional
             the metric used to score the predictions (default is log_loss)
         
-        needs_proba : boolean, optional
+        # TODO needs_proba : boolean, optional
             property of metric - where it needs predict_proba to score the predictions (default is True)
         
         greater_is_better : boolean, optional
@@ -485,7 +487,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
         self.baseline_classifier = baseline_classifier
         self.meta_classifier = meta_classifier
         self.metric = metric
-        self.needs_proba = needs_proba
+        # TODO self.needs_proba = needs_proba
         self.greater_is_better = greater_is_better
         self.buffer = buffer
         self.random_state = random_state
@@ -510,8 +512,52 @@ class IterativeLanTiSEAA(LanTiSEAA):
 
         return train, test, y_train, y_test
 
+
+    def bayesian_estimation(self, group1, group2, group1_name, group2_name):
+        y1 = np.array(group1)
+        y2 = np.array(group2)
+        y = pd.DataFrame(dict(value=np.r_[y1, y2], group=np.r_[[group1_name]*len(y1), [group2_name]*len(y2)]))
+        
+        μ_m = y.value.mean()
+        μ_s = y.value.std() * 2
+
+        with pm.Model() as model:
+            group1_mean = pm.Normal('group1_mean', μ_m, sd=μ_s)
+            group2_mean = pm.Normal('group2_mean', μ_m, sd=μ_s)
+
+        # according to https://docs.pymc.io/notebooks/BEST.html, instead of a very wide uniform prior to the standard deviation,
+        # "apply as much prior information that you have available to the parameterization of prior distributions" would be better.
+        # the std for our data are usually very small, so let's set the group standard deviation to have a Uniform(0.01-0.1)
+        σ_low = 0.01
+        σ_high = 0.1
+
+        with model:
+            group1_std = pm.Uniform('group1_std', lower=σ_low, upper=σ_high)
+            group2_std = pm.Uniform('group2_std', lower=σ_low, upper=σ_high)
+            
+        with model:
+            ν = pm.Exponential('ν_minus_one', 1/29.) + 1
+            
+        with model:
+            λ1 = group1_std**-2
+            λ2 = group2_std**-2
+
+            group1 = pm.StudentT(group1_name, nu=ν, mu=group1_mean, lam=λ1, observed=y1)
+            group2 = pm.StudentT(group2_name, nu=ν, mu=group2_mean, lam=λ2, observed=y2)
+            
+        with model:
+            diff_of_means = pm.Deterministic('difference of means', group1_mean - group2_mean)
+            diff_of_stds = pm.Deterministic('difference of stds', group1_std - group2_std)
+            effect_size = pm.Deterministic('effect size', diff_of_means / np.sqrt((group1_std**2 + group2_std**2) / 2))
+        
+        with model:
+            trace = pm.sample(2000, cores=None)
+        
+        return trace
+
     
     def fit(self, X, y, baseline_prediction=None, classes=None, \
+            fdr_level_bayesian=0.05, fdr_level_wilcoxon=0.05, \
             baseline_clf_fit_kwargs={}, baseline_clf_predict_proba_kwargs={}, \
             meta_clf_fit_kwargs={}, meta_clf_predict_proba_kwargs={}):
         """Perform the iterative stacking procedure and fit on the complete training data set
@@ -547,6 +593,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
             the corresponding values will be retrieved from self.baseline_classifier.classes_ and 
             self.meta_classifier.classes_ if exist (default is None).
 
+        fdr_level : 
+
         baseline_clf_fit_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling fit. Ignored if 
             baseline_prediction is not None (default is an empty dictionary).
@@ -573,10 +621,12 @@ class IterativeLanTiSEAA(LanTiSEAA):
             # TODO check baseline_prediction shape
             if not isinstance(baseline_prediction, pd.DataFrame):
                 baseline_prediction = pd.DataFrame(data=baseline_prediction)
+            self.buffer.save_feature_set(baseline_prediction, method_name='baseline', train_test='train')
         else:
             self.flags_['baseline_prediction_given_in_fit'] = False
         
-        # compute fold indices
+
+        ######### compute fold indices #########
         fold_indices = []
         for dev_index, val_index in self.cv.split(X, y):
             fold_indices.append((dev_index, val_index))
@@ -584,7 +634,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
         # save indices_df
         self.buffer.save_result(self.fold_indices_, 'fold_indices', data_type='indices')
         
-        # prepare data
+
+        ######### prepare data #########
         X = pd.Series(X)
         y = pd.Series(y)
         #compute dataset independent ts features
@@ -637,7 +688,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
                     self.buffer.save_feature_set(ts_train_features, method_name=transformer.name, fold_number=fold[0], train_test='train')
                     self.buffer.save_feature_set(ts_test_features, method_name=transformer.name, fold_number=fold[0], train_test='test')
 
-        # first iteration - evaluate baseline or the first time series method
+
+        ######### first iteration - evaluate baseline or the first time series method #########
         cv_results_train = []
         cv_results_test = []
         for fold in self.fold_indices_.iterrows():
@@ -659,7 +711,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
                     X_train = self.buffer.read_feature_set(method_name=first_transformer.name, fold_number=fold[0], train_test='train')
                     X_test = self.buffer.read_feature_set(method_name=first_transformer.name, fold_number=fold[0], train_test='test')
                 # select and save relevant features 
-                relevant_features = self.feature_extractor.select_relevant_features(X_train)
+                relevant_features = self.feature_extractor.select_relevant_features(X_train, y_train)
                 self.buffer.save_feature_relevance_table(relevant_features, method_name=first_transformer.name, fold_number=fold[0])
                 X_train_relevant = X_train[relevant_features.feature]
                 X_test_relevant = X_test[relevant_features.feature]
@@ -683,42 +735,97 @@ class IterativeLanTiSEAA(LanTiSEAA):
         self.buffer.save_evaluation_score(score_df=evaluation_score, method_name=self.feature_groups_[0])
 
 
+        ######### Iterative framework to add ts features #########
+        no_significant_improvement = False
+        while (not no_significant_improvement):
+            current_best = '_'.join(self.feature_groups_)
+            current_best_scores = self.buffer.read_evaluation_score(method_name=current_best)
+            effectiveness = []
+            no_significant_improvement = True
+            # add one ts method at a time
+            for transformer in self.ts_transformers:
+                if transformer.name not in self.feature_groups_:
+                    # combine features, make predictions and evaluate
+                    combined_name = '_'.join([current_best, transformer.name])
+                    cv_results_train = []
+                    cv_results_test = []
+                    for fold in self.fold_indices_.iterrows():
+                        # split train test
+                        _, _, y_train, y_test = self.fold_train_test(fold, X, y)
+                        # get features and combine
+                        X_train_current_best = self.buffer.read_feature_set(method_name=current_best, fold_number=fold[0], train_test='train')
+                        X_test_current_best = self.buffer.read_feature_set(method_name=current_best, fold_number=fold[0], train_test='test')
+                        X_train_to_add = self.buffer.read_feature_set(method_name=transformer.name, fold_number=fold[0], train_test='train')
+                        X_test_to_add = self.buffer.read_feature_set(method_name=transformer.name, fold_number=fold[0], train_test='test')
+                        X_train_combined = pd.concat([X_train_current_best, X_train_to_add], axis=1)
+                        X_test_combined = pd.concat([X_test_current_best, X_test_to_add], axis=1)
+                        # select and save relevant features 
+                        relevant_features = self.feature_extractor.select_relevant_features(X_train_combined, y_train)
+                        self.buffer.save_feature_relevance_table(relevant_features, method_name=combined_name, fold_number=fold[0])
+                        X_train_relevant = X_train_combined[relevant_features.feature]
+                        X_test_relevant = X_test_combined[relevant_features.feature]
+                        # train and save meta-classifier
+                        self.meta_classifier.fit(X_train_relevant, y_train, **meta_clf_fit_kwargs)
+                        self.buffer.save_class(self.meta_classifier, method_name='meta_classifier', 
+                                               class_name=self.meta_classifier.__class__.__name__, 
+                                               fold_number=fold[0], suffix=combined_name)
+                        meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
+                        pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                        pred_test = pd.DataFrame(self.meta_classifier.predict_proba(X_test_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                        # evaluate
+                        cv_results_train.append(self.metric(y_train, pred_train))
+                        cv_results_test.append(self.metric(y_test, pred_test))
+                    # save evaluation scores
+                    evaluation_score = pd.DataFrame({
+                        'train': cv_results_train,
+                        'test': cv_results_test
+                    })
+                    self.buffer.save_evaluation_score(score_df=evaluation_score, method_name=combined_name)
+
+                    # test if the addition of the ts significantly improved the predictions
+                    # bayesian estimation
+                    trace = self.bayesian_estimation(current_best_scores.test.values, evaluation_score.test.values, current_best, combined_name)
+                    self.buffer.save_bayesian_estimation_trace(trace, current_best, combined_name)
+                    func_dict = {
+                        'low': lambda x: np.percentile(x, fdr_level_bayesian*50),
+                        'mean': lambda x: np.mean(x),
+                        'high': lambda x: np.percentile(x, 100-fdr_level_bayesian*50)
+                    }
+                    trace_summary = pm.summary(trace, var_names=['difference of means'], stat_funcs=func_dict, extend=False)
+                    effectiveness.append((transformer.name, np.absolute(trace_summary.loc['difference of means']['mean'])))
+                    # Wilcoxon Signed Rank Test
+                    if wilcoxon(current_best_scores.test.values, evaluation_score.test.values).pvalue <= fdr_level_wilcoxon: # Wilcoxon Signed Rank Test passed
+                        if (self.greater_is_better and trace_summary.loc['difference of means']['high'] < 0) or \
+                            (not self.greater_is_better and trace_summary.loc['difference of means']['low'] > 0): # bayesian estimation passed
+                            no_significant_improvement = False # the improvement is significant
+            
+            # select the next best if exists at least one ts that significantly improved the result
+            if not no_significant_improvement:
+                to_append = pd.DataFrame(data=effectiveness, columns=['method', 'effectiveness']).sort_values(by='effectiveness', ascending=False).iloc[0]['method']
+                self.feature_groups_.append(to_append)
 
 
-################################################
-        else:
-            self.flags_['baseline_prediction_given_in_fit'] = False
-            if self.baseline_classifier is not None: # if baseline_classifier is given
-                # compute baseline method
-                logging.info("Computing baseline method .")
-                self.baseline_classifier.fit(X, y, **baseline_clf_fit_kwargs)
-                pred = self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs)
-                if classes is None:
-                    try:
-                        classes = self.baseline_classifier.classes_
-                    except AttributeError:
-                        pass
-                baseline_prediction = pd.DataFrame(data=pred, columns=classes)
-                self.buffer.save_class(self.baseline_classifier, method_name='baseline', 
-                                        class_name=self.baseline_classifier.__class__.__name__)
-        
-        # if at lease one of baseline_prediction or baseline_classifier is given so baseline 
-        # predictions was computed
-        if baseline_prediction is not None:
-            self.buffer.save_feature_set(baseline_prediction, method_name='baseline', train_test='train')
-            self.buffer.save_prediction(baseline_prediction, method_name='baseline', train_test='train')
-            self.feature_groups_.append('baseline')
-        
-        # compute time series features
+        ######### best combination obtained, now fit on the entire training data set #########
+        # compute dataset dependent ts features for the full train data set
         for transformer in self.ts_transformers:
-            logging.info("Computing {} time series.".format(transformer.name))
-            # map texts into time series
-            time_series = transformer.transform(X)
-            # extract and save time series features
-            ts_features = self.feature_extractor.extract_features(time_series)
-            self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='train')
-            self.feature_groups_.append(transformer.name)
-
+            if isinstance(transformer, BaseDatasetDependentTSTransformer) and (transformer.name in self.feature_groups_):
+                logging.info("Computing {} time series (data dependent).".format(transformer.name))
+                # map texts into time series
+                time_series = transformer.transform(X)
+                # extract and save time series features
+                ts_features = self.feature_extractor.extract_features(time_series)
+                self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='train')
+        
+        # compute baseline if needed
+        if (baseline_prediction is None) and (self.baseline_classifier is not None):
+            self.baseline_classifier.fit(X, y, **baseline_clf_fit_kwargs)
+            baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
+            pred = pd.DataFrame(self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
+            self.buffer.save_class(self.baseline_classifier, method_name='baseline', 
+                                   class_name=self.baseline_classifier.__class__.__name__)
+            self.buffer.save_feature_set(pred, method_name='baseline', train_test='train')
+            self.buffer.save_prediction(pred, method_name='baseline', train_test='train')
+        
         # combine features
         X_combined = self.get_combined_features(fold_number=None, train_test='train', surfix=None)
         combined_name = "_".join(self.feature_groups_)
@@ -734,27 +841,3 @@ class IterativeLanTiSEAA(LanTiSEAA):
                                     class_name=self.meta_classifier.__class__.__name__)
         
         return self
-
-
-    def predict(self, X):
-        """Make predictions on the given testing data set
-
-        Parameters
-        ----------
-        X : array-like
-            the testing texts
-
-        """
-        pass #TODO
-
-
-    def predict_proba(self, X):
-        """Make probability predictions on the given testing data set
-
-        Parameters
-        ----------
-        X : array-like
-            the testing texts
-
-        """
-        pass #TODO

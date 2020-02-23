@@ -24,24 +24,29 @@ class TSFeatureExtractor(ABC):
 
 
 class TsfreshTSFeatureExtractor(TSFeatureExtractor):
+    
+    def __init__(self, fdr_level=0.001):
+        super().__init__()
+        self.fdr_level = fdr_level
+
 
     def extract_features(self, ts, column_id='id', impute_function=impute, default_fc_parameters=ComprehensiveFCParameters(), n_jobs=-1, show_warnings=False, profile=False):
         return extract_features(ts, column_id=column_id, impute_function=impute_function,
                                 default_fc_parameters=default_fc_parameters,
                                 n_jobs=n_jobs, show_warnings=show_warnings, profile=profile)
 
-    def select_relevant_features(self, X, y, fdr_level=0.001):
+    def select_relevant_features(self, X, y):
         # calculate relevance tables for each binary class pair
         relevance_tables = list()
         for label in np.unique(y):
             y_binary = (y == label)
-            relevance_tables.append((label, calculate_relevance_table(X, y_binary, fdr_level=fdr_level)))
+            relevance_tables.append((label, calculate_relevance_table(X, y_binary, fdr_level=self.fdr_level)))
 
         # concatenate relevance tables
         relevance_table_concat = pd.concat([table for (lable, table) in relevance_tables])
 
         # perform benjamini hochberg test
-        relevance_table_benjamini = benjamini_hochberg_test(relevance_table_concat, hypotheses_independent=False, fdr_level=fdr_level)
+        relevance_table_benjamini = benjamini_hochberg_test(relevance_table_concat, hypotheses_independent=False, fdr_level=self.fdr_level)
 
         # remove irrelevant features from the table
         relevance_table_benjamini = relevance_table_benjamini[relevance_table_benjamini.relevant == True]
@@ -55,9 +60,8 @@ class TsfreshTSFeatureExtractor(TSFeatureExtractor):
                 logging.info(
                     'Number of features occurred {} time(s) in the relevant features selected after benjamini hochberg test: {}'
                         .format(i, occurrence_counts[i]))
-            except (KeyError, IndexError) as e:  # when there is no feature occur the corresponding number of times
+            except (KeyError, IndexError):  # when there is no feature occur the corresponding number of times
                 pass
-
         # build final relevance table
         relevance_table_final = pd.DataFrame({
             'feature': relevant_features,

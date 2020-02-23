@@ -2,6 +2,7 @@ import os
 import copy
 import errno
 import pandas as pd
+import pymc3 as pm
 from sklearn.externals import joblib
 from abc import ABC, abstractmethod
 
@@ -26,8 +27,14 @@ class Buffer(ABC):
     @abstractmethod
     def read_class(self, method_name, class_name, subclass_name=None, fold_number=None, surfix=None):
         pass
+    
+    @abstractmethod
+    def save_bayesian_estimation_trace(self, trace, group1_name, group2_name, surfix=None):
+        pass
 
-
+    @abstractmethod
+    def read_bayesian_estimation_trace(self, group1_name, group2_name, surfix=None):
+        pass
 
     def save_feature_set(self, df, method_name, key='X', fold_number=None, train_test=None, surfix=None):
         self.save_result(df, key, data_type='feature', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
@@ -211,6 +218,24 @@ class LocalBuffer(Buffer):
 
         return joblib.load(self.classes(filename, self.subfolder_))
 
+    
+    def save_bayesian_estimation_trace(self, trace, group1_name, group2_name, surfix=None):
+        filename = 'traces__{}__{}'.format(group1_name, group2_name)
+
+        if surfix is not None:
+            filename += '__{}'.format(surfix)
+        
+        joblib.dump(trace, self.classes(filename, self.subfolder_))
+
+
+    def read_bayesian_estimation_trace(self, group1_name, group2_name, surfix=None):
+        filename = 'traces__{}__{}'.format(group1_name, group2_name)
+
+        if surfix is not None:
+            filename += '__{}'.format(surfix)
+        
+        return joblib.load(self.classes(filename, self.subfolder_))
+
 
 
 class MemoryBuffer(Buffer):
@@ -219,6 +244,7 @@ class MemoryBuffer(Buffer):
         super().__init__()
         self.results_ = {}
         self.classes_ = {}
+        self.traces_ = {}
     
 
     def save_result(self, df, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
@@ -275,3 +301,21 @@ class MemoryBuffer(Buffer):
             key += '__{}'.format(surfix)
 
         return self.classes_[key]
+
+
+    def save_bayesian_estimation_trace(self, trace, group1_name, group2_name, surfix=None):
+        key = '{}__{}'.format(group1_name, group2_name)
+
+        if surfix is not None:
+            key += '__{}'.format(surfix)
+        
+        self.traces_.update({key: copy.deepcopy(trace)})
+
+
+    def read_bayesian_estimation_trace(self, group1_name, group2_name, surfix=None):
+        key = '{}__{}'.format(group1_name, group2_name)
+
+        if surfix is not None:
+            key += '__{}'.format(surfix)
+        
+        return self.traces_[key]
