@@ -8,6 +8,7 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.svm import SVC
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.utils.multiclass import unique_labels
 
 
 analyzer = CountVectorizer(analyzer='word').build_analyzer()
@@ -18,36 +19,65 @@ def split_text(text):
     return [ps.stem(word) for word in analyzer(text) if word not in eng_stopwords]
 
 class BaseVectorizerClassifier(BaseEstimator, ClassifierMixin):
+    """
+    Base class for NLP methods described in the paper. All these methods
+    are consist of a vectorizer (for vectorizing the texts) and a classifier
+    (for making predictions). 
+
+    ...
+
+    Attributes
+    ----------
+    classes_ : numpy array
+        unique labels in the training data set. Retrieved from the classifier if 
+        the classfier has the class_ attribute after fitting.
+
+
+    Methods
+    -------
+    fit(self, X, y)
+        Fit on the given training data set, vectorize the texts and train the classifier
+
+    predict(self, X)
+        Make predictions on the given testing data set
+
+    predict_proba(self, X)
+        Make probability predictions on the given testing data set
+    
+    """
 
     def __init__(self, vectorizer, classifier):
-        self.vectorizer_ = vectorizer
-        self.clf_ = classifier
+        self.vectorizer = vectorizer
+        self.classifier = classifier
     
     def fit(self, X, y):
         # train count vectorizer
-        cv_train = self.vectorizer_.fit_transform(X)
+        cv_train = self.vectorizer.fit_transform(X)
         # train classifier
-        self.clf_.fit(cv_train, y)
-        self.classes_ = self.clf_.classes_
+        self.classifier.fit(cv_train, y)
+        try:
+            self.classes_ = self.classifier.classes_
+        except AttributeError:
+            self.classes_ = unique_labels(y)
         return self
     
     def predict_proba(self, X):
         # vectorization
-        cv_X = self.vectorizer_.transform(X)
+        cv_X = self.vectorizer.transform(X)
         # prediction
-        return self.clf_.predict_proba(cv_X)
+        return self.classifier.predict_proba(cv_X)
 
     def predict(self, X):
         # vectorization
-        cv_X = self.vectorizer_.transform(X)
+        cv_X = self.vectorizer.transform(X)
         # prediction
-        return self.clf_.predict(cv_X)
+        return self.classifier.predict(cv_X)
 
 
 ######### Bag-of-words based methods #########
 class BOWMNB(BaseVectorizerClassifier):
 
-    def __init__(self, param_grid={'alpha': np.linspace(0.1, 1, 10)}, cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=42), scoring='neg_log_loss', n_jobs=-1):
+    def __init__(self, param_grid={'alpha': np.linspace(0.1, 1, 10)}, cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=None), scoring='neg_log_loss', n_jobs=-1):
         super().__init__(
             vectorizer = CountVectorizer(analyzer=split_text), 
             classifier = GridSearchCV(MultinomialNB(), param_grid, cv=cv, scoring=scoring, n_jobs=n_jobs)
@@ -55,7 +85,7 @@ class BOWMNB(BaseVectorizerClassifier):
 
 class BOWSVM(BaseVectorizerClassifier):
 
-    def __init__(self, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42), random_state=42):
+    def __init__(self, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=None), random_state=None):
         super().__init__(
             vectorizer = TfidfVectorizer(analyzer=split_text),
             classifier = CalibratedClassifierCV(SVC(random_state=random_state), cv=cv)
@@ -65,7 +95,7 @@ class BOWSVM(BaseVectorizerClassifier):
 ######### N-grams based methods #########
 class CharNGrams(BaseVectorizerClassifier):
 
-    def __init__(self, ngram_range=(1, 5), min_df=0.05, norm='l2', use_idf=True, sublinear_tf=True, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42), random_state=42):
+    def __init__(self, ngram_range=(1, 5), min_df=0.05, norm='l2', use_idf=True, sublinear_tf=True, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=None), random_state=None):
         super().__init__(
             vectorizer = TfidfVectorizer(analyzer='char', ngram_range=ngram_range, min_df=min_df, norm=norm, use_idf=use_idf, sublinear_tf=sublinear_tf),
             classifier = CalibratedClassifierCV(SVC(random_state=random_state), cv=cv)
@@ -73,7 +103,7 @@ class CharNGrams(BaseVectorizerClassifier):
 
 class WordNGrams(BaseVectorizerClassifier):
 
-    def __init__(self, ngram_range=(1, 3), norm='l2', use_idf=True, sublinear_tf=False, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42), random_state=42):
+    def __init__(self, ngram_range=(1, 3), norm='l2', use_idf=True, sublinear_tf=False, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=None), random_state=None):
         super().__init__(
             vectorizer = TfidfVectorizer(analyzer='word', ngram_range=ngram_range, norm=norm, use_idf=use_idf, sublinear_tf=sublinear_tf),
             classifier = CalibratedClassifierCV(SVC(random_state=random_state), cv=cv)
@@ -123,6 +153,19 @@ def kernel_matrix(X, Y, n_grams=[1, 2, 3]):
     return kernels
 
 class CSKSVM():
+    ''' The implementation of Conrad Sanderson and Simon Guenter's Sequence Kernel method
+
+    This class implements the character sequence kernel method used by Conrad Sanderson and 
+    Simon Guenter in their paper "Short Text Authorship Attribution via Sequence Kernels, 
+    Markov Chains and Author Unmasking: An Investigation" [1] to predict authorships of 
+    short texts.
+
+    [1] Sanderson, C., Guenter, S.: Short text authorship attribution via sequence kernels, 
+        markov chains and authorunmasking: An investigation. In: Proceedings of the 2006 
+        Conference on Empirical Methods in NaturalLanguage Processing, pp. 482–491 (2006). 
+        Association for Computational Linguistics
+
+    '''
 
     def __init__(self, n_grams=[1,2,3]):
         self.n_grams = n_grams
@@ -153,8 +196,8 @@ class CSKSVM():
         # train SVC and CalibratedClassifierCV
         self.svc = SVC(kernel='precomputed', random_state=random_state)
         self.svc.fit(self.kernel_train, self.y_train_sample)
-        self.clf = CalibratedClassifierCV(self.svc, method="sigmoid", cv="prefit")
-        self.clf.fit(self.kernel_validate, self.y_validate)
+        self.classifier = CalibratedClassifierCV(self.svc, method="sigmoid", cv="prefit")
+        self.classifier.fit(self.kernel_validate, self.y_validate)
         
         return self
 
@@ -164,7 +207,7 @@ class CSKSVM():
         self.kernel_test = kernel_test
 
         # prediction
-        pred = self.clf.predict_proba(kernel_test)
+        pred = self.classifier.predict_proba(kernel_test)
         if return_kernels:
             return pred, kernel_test
         else:
@@ -176,7 +219,7 @@ class CSKSVM():
         self.kernel_test = kernel_test
 
         # prediction
-        pred = self.clf.predict(kernel_test)
+        pred = self.classifier.predict(kernel_test)
         if return_kernels:
             return pred, kernel_test
         else:

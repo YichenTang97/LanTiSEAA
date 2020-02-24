@@ -38,19 +38,37 @@ class LanTiSEAA():
     ----------
     feature_groups_ : List
         a list of names for the feature groups combined together
+
     relevant_features_ : pandas.DataFrame
         the relevant features table selected by the TSFeatureExtractor
 
 
     Methods
     -------
-    fit(X, y, baseline_prediction=None)
+    get_combined_features(self, fold_number=None, train_test='train', surfix=None)
+        Get features from the methods in feature_groups_ attribute and combine
+
+    get_classes(self, classes=None, clf=None)
+        Get classes from the clf or use the classes parameter. If classes is given,
+        classes will be returned. Otherwise if clf is None, it will try to retrieve
+        the classes_ attribute from the meta_classifier. If failed, None will be 
+        returned.
+
+    fit(self, X, y, baseline_prediction=None, classes=None, \
+        baseline_clf_fit_kwargs={}, baseline_clf_predict_kwargs={}, \
+        baseline_clf_predict_proba_kwargs={}, meta_clf_fit_kwargs={})
         Fit on the given training data set, extract features and train the classifier
 
-    predict(self, X, baseline_prediction=None)
+    precompute_X(self, X, baseline_prediction=None, classes=None, surfix=None, \
+                 baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={})
+        Precompute X, prepare a feature matrix for meta-classifier to make predictions
+
+    predict(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, \
+            baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_kwargs={})
         Make predictions on the given testing data set
 
-    predict_proba(self, X, baseline_prediction=None)
+    predict_proba(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, \
+                  baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_proba_kwargs={})
         Make probability predictions on the given testing data set
     
     """
@@ -95,7 +113,6 @@ class LanTiSEAA():
             the buffer used to store the data generated during computation (default is MemoryBuffer).
 
         """
-        #TODO add type checkers
         self.ts_transformers = ts_transformers
         self.feature_extractor = feature_extractor
         self.baseline_classifier = baseline_classifier
@@ -106,6 +123,20 @@ class LanTiSEAA():
     
 
     def get_combined_features(self, fold_number=None, train_test='train', surfix=None):
+        '''Get features from the methods in feature_groups_ attribute and combine
+
+        Parameters
+        ----------
+        fold_number : int
+            the targeted fold to retrieve features from
+        
+        train_test : str
+            the targeted train/test set to retrieve features from
+
+        surfix : str
+            the surfix for targeting the file/object to retrieve features from
+        
+        '''
         features = []
         for feature_group in self.feature_groups_:
             features.append(self.buffer.read_feature_set(feature_group, fold_number=None, train_test=train_test, surfix=None))
@@ -113,6 +144,13 @@ class LanTiSEAA():
 
 
     def get_classes(self, classes=None, clf=None):
+        '''Get classes from the clf or use the classes parameter. 
+        
+        If classes is given, classes will be returned. Otherwise if clf is None, 
+        it will try to retrieve the classes_ attribute from the meta_classifier. 
+        If failed, None will be returned.
+
+        '''
         # get classes from self.meta_classifier in default
         if clf is None:
             clf = self.meta_classifier
@@ -174,7 +212,6 @@ class LanTiSEAA():
         # if baseline_prediction is given, ignore baseline_classifier
         if baseline_prediction is not None:
             self.flags_['baseline_prediction_given_in_fit'] = True
-            # TODO check baseline_prediction shape
             if not isinstance(baseline_prediction, pd.DataFrame):
                 baseline_prediction = pd.DataFrame(data=baseline_prediction)
         else:
@@ -264,7 +301,6 @@ class LanTiSEAA():
         assert (baseline_prediction is None and self.flags_['baseline_prediction_given_in_fit'] == True), "baseline_prediction cannot be None if it was used in fit."
         if 'baseline' in self.feature_groups_:
             if baseline_prediction is not None:
-                # TODO check baseline_prediction shape
                 if not isinstance(baseline_prediction, pd.DataFrame):
                     baseline_prediction = pd.DataFrame(data=baseline_prediction)
             else:
@@ -359,7 +395,7 @@ class LanTiSEAA():
             return pred
 
 
-    def predict_proba(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, 
+    def predict_proba(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, \
                       baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_proba_kwargs={}):
         """Make probability predictions on the given testing data set
 
@@ -446,21 +482,47 @@ class IterativeLanTiSEAA(LanTiSEAA):
     ----------
     feature_groups_ : List
         a list of names for the feature groups combined together
+
     relevant_features_ : pandas.DataFrame
         the relevant features table selected by the TSFeatureExtractor
+
     fold_indices_ : pandas.DataFrame
         the fold indices used to split X in fit
 
 
     Methods
     -------
-    fit(X, y)
+    fold_train_test(self, fold, X, y)
+        Split training and testing data set from X and y using the given fold indices
+    
+    bayesian_estimation(self, group1, group2, group1_name, group2_name)
+        Perform bayesian estimation to estimate the differences in means, standard deviations and effect size of two sample groups
+
+    fit(self, X, y, baseline_prediction=None, classes=None, \
+            fdr_level_bayesian=0.05, fdr_level_wilcoxon=0.05, \
+            baseline_clf_fit_kwargs={}, baseline_clf_predict_kwargs={},baseline_clf_predict_proba_kwargs={}, \
+            meta_clf_fit_kwargs={}, meta_clf_predict_kwargs={}, meta_clf_predict_proba_kwargs={})
         Perform the iterative stacking procedure and fit on the complete training data set
 
-    predict(self, X)
+    get_combined_features(self, fold_number=None, train_test='train', surfix=None)
+        Get features from the methods in feature_groups_ attribute and combine
+
+    get_classes(self, classes=None, clf=None)
+        Get classes from the clf or use the classes parameter. If classes is given,
+        classes will be returned. Otherwise if clf is None, it will try to retrieve
+        the classes_ attribute from the meta_classifier. If failed, None will be 
+        returned.
+
+    precompute_X(self, X, baseline_prediction=None, classes=None, surfix=None, \
+                 baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={})
+        Precompute X, prepare a feature matrix for meta-classifier to make predictions
+
+    predict(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, \
+            baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_kwargs={})
         Make predictions on the given testing data set
 
-    predict_proba(self, X)
+    predict_proba(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, \
+                  baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_proba_kwargs={})
         Make probability predictions on the given testing data set
     
     """
@@ -547,6 +609,24 @@ class IterativeLanTiSEAA(LanTiSEAA):
 
 
     def fold_train_test(self, fold, X, y):
+        '''Split training and testing data set from X and y using the given fold indices
+
+        Parameters
+        ----------
+        fold : tuple
+            the fold indices for splitting train and test sets. fold is a tuple of two elements,
+            fold[0] is the fold number of the fold under the k-folds, and fold[1] is a row in 
+            a pandas DataFrame, containing two columns 'train' and 'test'. Under 'train' are the 
+            indices for the training set under this fold and under 'test' are the indices for the 
+            testing set under this fold.
+
+        X : array-like
+            the data to be split
+        
+        y : array-like
+            the target to be split
+        
+        '''
         # split train test
         train_indices = fold[1].train
         test_indices = fold[1].test
@@ -559,6 +639,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
 
 
     def bayesian_estimation(self, group1, group2, group1_name, group2_name):
+        '''Perform bayesian estimation to estimate the differences in means, standard deviations and effect size of two sample groups
+        '''
         y1 = np.array(group1)
         y2 = np.array(group2)
         y = pd.DataFrame(dict(value=np.r_[y1, y2], group=np.r_[[group1_name]*len(y1), [group2_name]*len(y2)]))
@@ -677,7 +759,6 @@ class IterativeLanTiSEAA(LanTiSEAA):
         # if baseline_prediction is given, ignore baseline_classifier
         if baseline_prediction is not None:
             self.flags_['baseline_prediction_given_in_fit'] = True
-            # TODO check baseline_prediction shape
             if not isinstance(baseline_prediction, pd.DataFrame):
                 baseline_prediction = pd.DataFrame(data=baseline_prediction)
             self.buffer.save_feature_set(baseline_prediction, method_name='baseline', train_test='train')
@@ -905,7 +986,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
         combined_name = "_".join(self.feature_groups_)
 
         # select and save relevant features 
-        self.relevant_features_ = self.feature_extractor.select_relevant_features(X_combined)
+        self.relevant_features_ = self.feature_extractor.select_relevant_features(X_combined, y)
         self.buffer.save_feature_relevance_table(self.relevant_features_, method_name=combined_name)
         X_relevant = X_combined[self.relevant_features_.feature]
 
