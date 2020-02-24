@@ -9,7 +9,7 @@ from tsfresh.feature_selection.relevance import calculate_relevance_table, combi
 from tsfresh.feature_selection.benjamini_hochberg_test import benjamini_hochberg_test
 
 
-class TSFeatureExtractor(ABC):
+class BaseTSFeatureExtractor(ABC):
 
     def __init__(self):
         super().__init__()
@@ -23,7 +23,7 @@ class TSFeatureExtractor(ABC):
         pass
 
 
-class TsfreshTSFeatureExtractor(TSFeatureExtractor):
+class TsfreshTSFeatureExtractor(BaseTSFeatureExtractor):
     
     def __init__(self, fdr_level=0.001):
         super().__init__()

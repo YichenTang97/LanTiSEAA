@@ -8,7 +8,7 @@ from sklearn.externals import joblib
 from abc import ABC, abstractmethod
 
 
-class Buffer(ABC):
+class BaseBuffer(ABC):
 
     def __init__(self):
         super().__init__()
@@ -104,7 +104,7 @@ class Buffer(ABC):
 
 
 
-class LocalBuffer(Buffer):
+class LocalBuffer(BaseBuffer):
 
     def __init__(self, project_path=None, subfolder=''):
         super().__init__()
@@ -265,7 +265,7 @@ class LocalBuffer(Buffer):
 
 
 
-class MemoryBuffer(Buffer):
+class MemoryBuffer(BaseBuffer):
 
     def __init__(self):
         super().__init__()

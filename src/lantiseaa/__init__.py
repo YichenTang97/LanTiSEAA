@@ -8,8 +8,8 @@ from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import GradientBoostingClassifier
 from pkg_resources import get_distribution, DistributionNotFound
-from lantiseaa.buffer import Buffer, MemoryBuffer, LocalBuffer
-from lantiseaa.extractor import TSFeatureExtractor, TsfreshTSFeatureExtractor
+from lantiseaa.buffer import BaseBuffer, MemoryBuffer, LocalBuffer
+from lantiseaa.extractor import BaseTSFeatureExtractor, TsfreshTSFeatureExtractor
 from lantiseaa.nlp import BOWMNB
 from lantiseaa.ts import *
 
@@ -71,7 +71,7 @@ class LanTiSEAA():
             WordCntVecTransformer, TokenFreqTransformer, and TokenFreqRankTransformer - all under 
             lantiseaa.ts package).
         
-        feature_extractor : lantiseaa.extractor.TSFeatureExtractor, optional
+        feature_extractor : lantiseaa.extractor.BaseTSFeatureExtractor, optional
             the time series feature extractor for extracting and selecting relevant features (default is
             lantiseaa.extractor.TsfreshTSFeatureExtractor).
 
@@ -91,7 +91,7 @@ class LanTiSEAA():
             should be defined when initializing the object. For better performance, pass in XGBClassifier 
             instead of GradientBoostingClassifier instead).
 
-        buffer : lantiseaa.buffer.Buffer, optional
+        buffer : lantiseaa.buffer.BaseBuffer, optional
             the buffer used to store the data generated during computation (default is MemoryBuffer).
 
         """
@@ -483,7 +483,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             WordCntVecTransformer, TokenFreqTransformer, and TokenFreqRankTransformer - all under 
             lantiseaa.ts package).
         
-        feature_extractor : lantiseaa.extractor.TSFeatureExtractor, optional
+        feature_extractor : lantiseaa.extractor.BaseTSFeatureExtractor, optional
             the time series feature extractor for extracting and selecting relevant features (default is
             lantiseaa.extractor.TsfreshTSFeatureExtractor).
 
@@ -519,7 +519,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
         greater_is_better : boolean, optional
             property of metric - where a greater score is a better score (default is False)
 
-        buffer : lantiseaa.buffer.Buffer, optional
+        buffer : lantiseaa.buffer.BaseBuffer, optional
             the buffer used to store the data generated during computation (default is MemoryBuffer).
 
         random_state : int, optional

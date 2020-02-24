@@ -7,6 +7,7 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.svm import SVC
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.base import BaseEstimator, ClassifierMixin
 
 
 analyzer = CountVectorizer(analyzer='word').build_analyzer()
@@ -16,7 +17,7 @@ eng_stopwords = set(stopwords.words("english"))
 def split_text(text):
     return [ps.stem(word) for word in analyzer(text) if word not in eng_stopwords]
 
-class BaseVectorizerClassifier():
+class BaseVectorizerClassifier(BaseEstimator, ClassifierMixin):
 
     def __init__(self, vectorizer, classifier):
         self.vectorizer_ = vectorizer
