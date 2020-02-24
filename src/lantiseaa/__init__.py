@@ -58,6 +58,7 @@ class LanTiSEAA():
     def __init__(self, \
                  ts_transformers=[TokenLenFreqTransformer(), TokenLenSeqTransformer(), WordCntVecTransformer(), TokenFreqTransformer(), TokenFreqRankTransformer()], \
                  feature_extractor=TsfreshTSFeatureExtractor(), baseline_classifier=BOWMNB(), \
+                 use_predict_proba=True, \
                  meta_classifier=GradientBoostingClassifier(), buffer=MemoryBuffer()):
         """Construct new LanTiSEAA object
 
@@ -80,6 +81,9 @@ class LanTiSEAA():
             is not given, baseline will be ignored and only time series features will be used (default
             is lantiseaa.nlp.BOWMNB).
 
+        use_predict_proba : boolean, optional
+            either to use predict_proba or predict for the baseline to make predictions
+
         meta_classifier : Classifier, optional
             the meta-classifier to be trained on combined features and make predictions (default is 
             GradientBoostingClassifier from sklearn. Note this is different from the XGBClassifier by XGBoost
@@ -95,6 +99,7 @@ class LanTiSEAA():
         self.ts_transformers = ts_transformers
         self.feature_extractor = feature_extractor
         self.baseline_classifier = baseline_classifier
+        self.use_predict_proba = use_predict_proba
         self.meta_classifier = meta_classifier
         self.buffer = buffer
         self.flags_ = {'baseline_prediction_given_in_fit': False}
@@ -121,7 +126,9 @@ class LanTiSEAA():
             return classes
     
 
-    def fit(self, X, y, baseline_prediction=None, classes=None, baseline_clf_fit_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_fit_kwargs={}):
+    def fit(self, X, y, baseline_prediction=None, classes=None, \
+            baseline_clf_fit_kwargs={}, baseline_clf_predict_kwargs={}, \
+            baseline_clf_predict_proba_kwargs={}, meta_clf_fit_kwargs={}):
         """Fit on the given training data set, extract features and train the classifier
 
         Parameters
@@ -140,15 +147,22 @@ class LanTiSEAA():
         classes : list, optional
             the classes used as pandas.DataFrame column names when saving baseline_predictions
             made by baseline_classifier. If is None, the value will be retrieved from 
-            self.baseline_classifier.classes_ if exists (default is None).
+            self.baseline_classifier.classes_ if exists. Ignored if use_predict_proba 
+            is False (default is None).
 
         baseline_clf_fit_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling fit. Ignored if 
             baseline_prediction is not None (default is an empty dictionary).
 
+        baseline_clf_predict_kwargs : dict, Optional
+            the kwargs to be passed to the baseline classifier when calling predict. 
+            Ignored if baseline_prediction is not None or use_predict_proba is True 
+            (default is an empty dictionary).
+
         baseline_clf_predict_proba_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling predict_proba. 
-            Ignored if baseline_prediction is not None (default is an empty dictionary).
+            Ignored if baseline_prediction is not None or use_predict_proba is False 
+            (default is an empty dictionary).
 
         meta_clf_fit_kwargs : dict, Optional
             the kwargs to be passed to the meta classifier when calling fit (default is an empty 
@@ -169,9 +183,13 @@ class LanTiSEAA():
                 # compute baseline method
                 logging.info("Computing baseline method.")
                 self.baseline_classifier.fit(X, y, **baseline_clf_fit_kwargs)
-                pred = self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs)
-                classes = self.get_classes(classes, self.baseline_classifier)
-                baseline_prediction = pd.DataFrame(data=pred, columns=classes)
+                if self.use_predict_proba:
+                    pred = self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs)
+                    classes = self.get_classes(classes, self.baseline_classifier)
+                    baseline_prediction = pd.DataFrame(data=pred, columns=classes)
+                else:
+                    pred = self.baseline_classifier.predict(X, **baseline_clf_predict_kwargs)
+                    baseline_prediction = pd.DataFrame(data=pred, columns=['y'])
                 self.buffer.save_class(self.baseline_classifier, method_name='baseline', 
                                         class_name=self.baseline_classifier.__class__.__name__)
         
@@ -209,7 +227,8 @@ class LanTiSEAA():
         return self
 
 
-    def precompute_X(self, X, baseline_prediction=None, classes=None, surfix=None, baseline_clf_predict_proba_kwargs={}):
+    def precompute_X(self, X, baseline_prediction=None, classes=None, surfix=None, \
+                     baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}):
         """Precompute X, prepare a feature matrix for meta-classifier to make predictions
 
         Parameters
@@ -231,13 +250,15 @@ class LanTiSEAA():
         surfix : str, optional
             the surfix to be passed to the buffer when saving data
 
+        baseline_clf_predict_kwargs : dict, Optional
+            the kwargs to be passed to the baseline classifier when calling predict. Ignored if 
+            baseline_prediction is not None or use_predict_proba is True (default is an 
+            empty dictionary).
+
         baseline_clf_predict_proba_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling predict_proba. 
-            Ignored if baseline_prediction is not None (default is an empty dictionary).
-
-        meta_clf_predict_kwargs : dict, Optional
-            the kwargs to be passed to the meta classifier when calling predict (default is an 
-            empty dictionary).
+            Ignored if baseline_prediction is not None or use_predict_proba is False 
+            (default is an empty dictionary).
         
         """
         assert (baseline_prediction is None and self.flags_['baseline_prediction_given_in_fit'] == True), "baseline_prediction cannot be None if it was used in fit."
@@ -249,9 +270,13 @@ class LanTiSEAA():
             else:
                 # compute baseline method
                 logging.info("Computing baseline method.")
-                pred = self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs)
-                baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
-                baseline_prediction = pd.DataFrame(data=pred, columns=baseline_pred_classes)
+                if self.use_predict_proba:
+                    pred = self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs)
+                    baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
+                    baseline_prediction = pd.DataFrame(data=pred, columns=baseline_pred_classes)
+                else:
+                    pred = self.baseline_classifier.predict(X, **baseline_clf_predict_kwargs)
+                    baseline_prediction = pd.DataFrame(data=pred, columns=['y'])
                 
             self.buffer.save_feature_set(baseline_prediction, method_name='baseline', train_test='test', surfix=surfix)
             self.buffer.save_prediction(baseline_prediction, method_name='baseline', train_test='test', surfix=surfix)
@@ -270,7 +295,8 @@ class LanTiSEAA():
         return X_combined[self.relevant_features_.feature]
 
 
-    def predict(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_kwargs={}):
+    def predict(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, \
+                baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_kwargs={}):
         """Make predictions on the given testing data set
 
         Parameters
@@ -299,9 +325,15 @@ class LanTiSEAA():
         surfix : str, optional
             the surfix to be passed to the buffer when saving data
 
+        baseline_clf_predict_kwargs : dict, Optional
+            the kwargs to be passed to the baseline classifier when calling predict. Ignored if 
+            baseline_prediction is not None or use_predict_proba is True (default is an 
+            empty dictionary).
+
         baseline_clf_predict_proba_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling predict_proba. 
-            Ignored if baseline_prediction is not None (default is an empty dictionary).
+            Ignored if baseline_prediction is not None or use_predict_proba is False 
+            (default is an empty dictionary).
 
         meta_clf_predict_kwargs : dict, Optional
             the kwargs to be passed to the meta classifier when calling predict (default is an 
@@ -316,8 +348,10 @@ class LanTiSEAA():
             return pred
 
         else:
-            X_relevant = self.precompute_X(X, baseline_prediction=baseline_prediction, classes=classes,
-                                           surfix=surfix, baseline_clf_predict_proba_kwargs=baseline_clf_predict_proba_kwargs)
+            X_relevant = self.precompute_X(X, baseline_prediction=baseline_prediction, 
+                                           classes=classes, surfix=surfix, 
+                                           baseline_clf_predict_kwargs=baseline_clf_predict_kwargs,
+                                           baseline_clf_predict_proba_kwargs=baseline_clf_predict_proba_kwargs)
             
             pred = self.meta_classifier.predict(X_relevant, **meta_clf_predict_kwargs)
             self.buffer.save_prediction(pd.DataFrame(pred, columns=['y']), method_name='meta_classifier', train_test='test', surfix=surfix)
@@ -325,7 +359,8 @@ class LanTiSEAA():
             return pred
 
 
-    def predict_proba(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_proba_kwargs={}):
+    def predict_proba(self, X, X_precomputed=None, baseline_prediction=None, classes=None, surfix=None, 
+                      baseline_clf_predict_kwargs={}, baseline_clf_predict_proba_kwargs={}, meta_clf_predict_proba_kwargs={}):
         """Make probability predictions on the given testing data set
 
         Parameters
@@ -355,9 +390,15 @@ class LanTiSEAA():
         surfix : str, optional
             the surfix to be passed to the buffer when saving data
 
+        baseline_clf_predict_kwargs : dict, Optional
+            the kwargs to be passed to the baseline classifier when calling predict. Ignored if 
+            baseline_prediction is not None or use_predict_proba is True (default is an 
+            empty dictionary).
+
         baseline_clf_predict_proba_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling predict_proba. 
-            Ignored if baseline_prediction is not None (default is an empty dictionary).
+            Ignored if baseline_prediction is not None or use_predict_proba is False 
+            (default is an empty dictionary).
 
         meta_clf_predict_proba_kwargs : dict, Optional
             the kwargs to be passed to the meta classifier when calling predict_proba (default is 
@@ -376,8 +417,10 @@ class LanTiSEAA():
             return pred
 
         else:
-            X_relevant = self.precompute_X(X, baseline_prediction=baseline_prediction, classes=classes,
-                                           surfix=surfix, baseline_clf_predict_proba_kwargs=baseline_clf_predict_proba_kwargs)
+            X_relevant = self.precompute_X(X, baseline_prediction=baseline_prediction, 
+                                           classes=classes, surfix=surfix, 
+                                           baseline_clf_predict_kwargs=baseline_clf_predict_kwargs,
+                                           baseline_clf_predict_proba_kwargs=baseline_clf_predict_proba_kwargs)
             
             pred = self.meta_classifier.predict_proba(X_relevant, **meta_clf_predict_proba_kwargs)
             self.buffer.save_prediction(pd.DataFrame(pred, columns=meta_clf_pred_classes), method_name='meta_classifier', train_test='test', surfix=surfix)
@@ -426,7 +469,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
                  ts_transformers=[TokenLenFreqTransformer(), TokenLenSeqTransformer(), WordCntVecTransformer(), TokenFreqTransformer(), TokenFreqRankTransformer()], \
                  feature_extractor=TsfreshTSFeatureExtractor(), baseline_classifier=BOWMNB(), \
                  meta_classifier=GradientBoostingClassifier(), cv=None, \
-                 metric=log_loss, greater_is_better=False, \ # TODO allow metric that works on non-probablistic predictions - (needs_proba=True, )
+                 metric=log_loss, greater_is_better=False, \
+                 use_predict_proba=True, \
                  buffer=MemoryBuffer(), random_state=None):
         """Construct new LanTiSEAA object
 
@@ -465,11 +509,12 @@ class IterativeLanTiSEAA(LanTiSEAA):
             When None or an integer is passed in, a StratifiedKFold will be used to split the folds and 
             the random_state parameter will be used to specify the random seed for the StratifiedKFold.
         
+        use_predict_proba : boolean, optional
+            use predict_proba for the baseline method, meta classifier, and metric. It will be applied to all
+            three (default is True)
+        
         metric : sklearn.metric, optional
             the metric used to score the predictions (default is log_loss)
-        
-        # TODO needs_proba : boolean, optional
-            property of metric - where it needs predict_proba to score the predictions (default is True)
         
         greater_is_better : boolean, optional
             property of metric - where a greater score is a better score (default is False)
@@ -487,8 +532,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
         self.baseline_classifier = baseline_classifier
         self.meta_classifier = meta_classifier
         self.metric = metric
-        # TODO self.needs_proba = needs_proba
         self.greater_is_better = greater_is_better
+        self.use_predict_proba = use_predict_proba
         self.buffer = buffer
         self.random_state = random_state
         self.flags_ = {'baseline_prediction_given_in_fit': False}
@@ -558,8 +603,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
     
     def fit(self, X, y, baseline_prediction=None, classes=None, \
             fdr_level_bayesian=0.05, fdr_level_wilcoxon=0.05, \
-            baseline_clf_fit_kwargs={}, baseline_clf_predict_proba_kwargs={}, \
-            meta_clf_fit_kwargs={}, meta_clf_predict_proba_kwargs={}):
+            baseline_clf_fit_kwargs={}, baseline_clf_predict_kwargs={},baseline_clf_predict_proba_kwargs={}, \
+            meta_clf_fit_kwargs={}, meta_clf_predict_kwargs={}, meta_clf_predict_proba_kwargs={}):
         """Perform the iterative stacking procedure and fit on the complete training data set
 
         Unlike LanTiSEAA, baseline_prediction parameter is not allowed here as the data set 
@@ -599,13 +644,27 @@ class IterativeLanTiSEAA(LanTiSEAA):
             the kwargs to be passed to the baseline classifier when calling fit. Ignored if 
             baseline_prediction is not None (default is an empty dictionary).
 
+        baseline_clf_predict_kwargs : dict, Optional
+            the kwargs to be passed to the baseline classifier when calling predict. Ignored if 
+            baseline_prediction is not None or use_predict_proba is True (default is an 
+            empty dictionary).
+
         baseline_clf_predict_proba_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling predict_proba. 
-            Ignored if baseline_prediction is not None (default is an empty dictionary).
+            Ignored if baseline_prediction is not None or use_predict_proba is False 
+            (default is an empty dictionary).
 
         meta_clf_fit_kwargs : dict, Optional
             the kwargs to be passed to the meta classifier when calling fit (default is an empty 
             dictionary).
+
+        meta_clf_predict_kwargs : dict, Optional
+            the kwargs to be passed to the meta classifier when calling predict. Ignored if 
+            use_predict_proba is True (default is an empty dictionary).
+
+        meta_clf_predict_proba_kwargs : dict, Optional
+            the kwargs to be passed to the meta classifier when calling predict_proba. 
+            Ignored if use_predict_proba is False (default is an empty dictionary).
             
         """
         
@@ -661,9 +720,13 @@ class IterativeLanTiSEAA(LanTiSEAA):
                     # compute baseline method
                     logging.info("Computing baseline method for fold {}.".format(fold[0]))
                     self.baseline_classifier.fit(X_train, y_train, **baseline_clf_fit_kwargs)
-                    baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
-                    pred_train = pd.DataFrame(self.baseline_classifier.predict_proba(X_train, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
-                    pred_test = pd.DataFrame(self.baseline_classifier.predict_proba(X_test, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
+                    if self.use_predict_proba:
+                        baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
+                        pred_train = pd.DataFrame(self.baseline_classifier.predict_proba(X_train, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
+                        pred_test = pd.DataFrame(self.baseline_classifier.predict_proba(X_test, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
+                    else:
+                        pred_train = pd.DataFrame(self.baseline_classifier.predict(X_train, **baseline_clf_predict_kwargs), columns=['y'])
+                        pred_test = pd.DataFrame(self.baseline_classifier.predict(X_test, **baseline_clf_predict_kwargs), columns=['y'])
 
                     self.buffer.save_class(self.baseline_classifier, method_name='baseline', 
                                            class_name=self.baseline_classifier.__class__.__name__, fold_number=fold[0])
@@ -720,9 +783,13 @@ class IterativeLanTiSEAA(LanTiSEAA):
                 self.buffer.save_class(self.meta_classifier, method_name='meta_classifier', 
                                             class_name=self.meta_classifier.__class__.__name__, 
                                             fold_number=fold[0], suffix=first_transformer.name)
-                meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
-                pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
-                pred_test = pd.DataFrame(self.meta_classifier.predict_proba(X_test_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                if self.use_predict_proba:
+                    meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
+                    pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                    pred_test = pd.DataFrame(self.meta_classifier.predict_proba(X_test_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                else:
+                    pred_train = pd.DataFrame(self.meta_classifier.predict(X_train_relevant, **meta_clf_predict_kwargs), columns=['y'])
+                    pred_test = pd.DataFrame(self.meta_classifier.predict(X_test_relevant, **meta_clf_predict_kwargs), columns=['y'])
 
             # evaluate
             cv_results_train.append(self.metric(y_train, pred_train))
@@ -769,9 +836,13 @@ class IterativeLanTiSEAA(LanTiSEAA):
                         self.buffer.save_class(self.meta_classifier, method_name='meta_classifier', 
                                                class_name=self.meta_classifier.__class__.__name__, 
                                                fold_number=fold[0], suffix=combined_name)
-                        meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
-                        pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
-                        pred_test = pd.DataFrame(self.meta_classifier.predict_proba(X_test_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                        if self.use_predict_proba:
+                            meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
+                            pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                            pred_test = pd.DataFrame(self.meta_classifier.predict_proba(X_test_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
+                        else:
+                            pred_train = pd.DataFrame(self.meta_classifier.predict(X_train_relevant, **meta_clf_predict_kwargs), columns=['y'])
+                            pred_test = pd.DataFrame(self.meta_classifier.predict(X_test_relevant, **meta_clf_predict_kwargs), columns=['y'])
                         # evaluate
                         cv_results_train.append(self.metric(y_train, pred_train))
                         cv_results_test.append(self.metric(y_test, pred_test))
@@ -819,8 +890,11 @@ class IterativeLanTiSEAA(LanTiSEAA):
         # compute baseline if needed
         if (baseline_prediction is None) and (self.baseline_classifier is not None):
             self.baseline_classifier.fit(X, y, **baseline_clf_fit_kwargs)
-            baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
-            pred = pd.DataFrame(self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
+            if self.use_predict_proba:
+                baseline_pred_classes = self.get_classes(classes, self.baseline_classifier)
+                pred = pd.DataFrame(self.baseline_classifier.predict_proba(X, **baseline_clf_predict_proba_kwargs), columns=baseline_pred_classes)
+            else:
+                pred = pd.DataFrame(self.baseline_classifier.predict(X, **baseline_clf_predict_kwargs), columns=['y'])
             self.buffer.save_class(self.baseline_classifier, method_name='baseline', 
                                    class_name=self.baseline_classifier.__class__.__name__)
             self.buffer.save_feature_set(pred, method_name='baseline', train_test='train')
