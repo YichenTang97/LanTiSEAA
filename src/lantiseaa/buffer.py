@@ -1,4 +1,5 @@
 import os
+import csv
 import copy
 import errno
 import pandas as pd
@@ -11,6 +12,15 @@ class Buffer(ABC):
 
     def __init__(self):
         super().__init__()
+
+
+    @abstractmethod
+    def save_record(self, genre, type_name, name, key, fold_number, train_test, surfix):
+        pass
+
+    @abstractmethod
+    def read_records(self):
+        pass
     
     @abstractmethod
     def save_result(self, df, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
@@ -36,6 +46,7 @@ class Buffer(ABC):
     def read_bayesian_estimation_trace(self, group1_name, group2_name, surfix=None):
         pass
 
+
     def save_feature_set(self, df, method_name, key='X', fold_number=None, train_test=None, surfix=None):
         self.save_result(df, key, data_type='feature', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
@@ -44,16 +55,14 @@ class Buffer(ABC):
         return self.read_result(key, data_type='feature', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 
-
     def save_intermediate_result(self, df, method_name, key, fold_number=None, train_test=None, surfix=None):
         self.save_result(df, key, data_type='intermediate_result', data_name=method_name, fold_number=fold_number, train_test=train_test, 
-                             surfix=surfix)
+                         surfix=surfix)
 
 
     def read_intermediate_result(self, method_name, key, fold_number=None, train_test=None, surfix=None):
         return self.read_result(key, data_type='intermediate_result', data_name=method_name, fold_number=fold_number, train_test=train_test, 
                                     surfix=surfix)
-
 
 
     def save_feature_relevance_table(self, relevance_table, method_name, key='feature_relevance_table', fold_number=None, surfix=None):
@@ -64,14 +73,12 @@ class Buffer(ABC):
         return self.read_result(key, data_type='result', data_name=method_name, fold_number=fold_number, train_test=None, surfix=surfix)
 
 
-
     def save_prediction(self, pred_df, method_name, key='prediction', fold_number=None, train_test=None, surfix=None):
         self.save_result(pred_df, key, data_type='result', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 
     def read_prediction(self, method_name, key='prediction', fold_number=None, train_test=None, surfix=None):
         return self.read_result(key, data_type='result', data_name=method_name, fold_number=fold_number, train_test=train_test, surfix=surfix)
-
 
 
     def save_class_attribute(self, attribute_df, method_name, class_name, attribute_name, fold_number=None, surfix=None):
@@ -82,7 +89,6 @@ class Buffer(ABC):
     def read_class_attribute(self, method_name, class_name, attribute_name, fold_number=None, surfix=None):
         key = '{}__{}'.format(class_name, attribute_name)
         return self.read_result(key, data_type='class_attribute', data_name=method_name, fold_number=fold_number, train_test=None, surfix=surfix)
-
 
 
     def save_evaluation_score(self, score_df, method_name, surfix=None):
@@ -157,6 +163,24 @@ class LocalBuffer(Buffer):
         return self.project(filename, folder=os.path.join('classes', subfolder))
 
 
+    def save_record(self, genre, type_name, name, key, fold_number, train_test, surfix):
+        records = self.results("records.csv", subfolder=self.subfolder_)
+        if not os.path.exists(records):
+            with open(records, 'w', newline='') as csvfile:
+                csv.writer(csvfile, delimiter=',', quotechar='|').writerow(['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix'])
+
+        with open(records, 'a', newline='') as csvfile:
+            csv.writer(csvfile, delimiter=',', quotechar='|').writerow([genre, type_name, name, key, fold_number, train_test, surfix])
+
+
+    def read_records(self):
+        records = self.results("records.csv", subfolder=self.subfolder_)
+        if not os.path.exists(records):
+            return None
+        else:
+            return pd.read_csv(records).sort_values(by=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix']).reset_index(drop=True)
+
+
     def save_result(self, df, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
         # create the directory if not exist
         if not os.path.isdir(self.results('', self.subfolder_)):
@@ -173,6 +197,7 @@ class LocalBuffer(Buffer):
             key += '__{}'.format(surfix)
 
         df.to_hdf(self.results('{}.hdf'.format(data_type), self.subfolder_), key)
+        self.save_record(genre='result', type_name=data_type, name=data_name, key=key, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 
     def read_result(self, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
@@ -204,6 +229,7 @@ class LocalBuffer(Buffer):
             filename += '__{}'.format(surfix)
 
         joblib.dump(c, self.classes(filename, self.subfolder_))
+        self.save_record(genre='class', type_name=method_name, name=class_name, key=subclass_name, fold_number=fold_number, train_test=None, surfix=surfix)
 
 
     def read_class(self, method_name, class_name, subclass_name=None, fold_number=None, surfix=None):
@@ -226,6 +252,7 @@ class LocalBuffer(Buffer):
             filename += '__{}'.format(surfix)
         
         joblib.dump(trace, self.classes(filename, self.subfolder_))
+        self.save_record(genre='traces', type_name=filename, name=None, key=None, fold_number=None, train_test=None, surfix=surfix)
 
 
     def read_bayesian_estimation_trace(self, group1_name, group2_name, surfix=None):
@@ -242,9 +269,23 @@ class MemoryBuffer(Buffer):
 
     def __init__(self):
         super().__init__()
+        self.records_ = None
         self.results_ = {}
         self.classes_ = {}
         self.traces_ = {}
+
+
+    def save_record(self, genre, type_name, name, key, fold_number, train_test, surfix):
+        new_record = pd.DataFrame([[genre, type_name, name, key, fold_number, train_test, surfix]], 
+                                  columns=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix'])
+        if self.records_ is None:
+            self.records_ = new_record
+        else:
+            self.records_.append(new_record, ignore_index=True)
+
+
+    def read_records(self):
+        return self.records_.sort_values(by=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix']).reset_index(drop=True)
     
 
     def save_result(self, df, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
@@ -261,6 +302,7 @@ class MemoryBuffer(Buffer):
             key += '__{}'.format(surfix)
         
         self.results_[data_type].update({key: df})
+        self.save_record(genre='result', type_name=data_type, name=data_name, key=key, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 
     def read_result(self, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
@@ -288,6 +330,7 @@ class MemoryBuffer(Buffer):
             key += '__{}'.format(surfix)
 
         self.classes_.update({key: copy.deepcopy(c)})
+        self.save_record(genre='class', type_name=method_name, name=class_name, key=subclass_name, fold_number=fold_number, train_test=None, surfix=surfix)
 
 
     def read_class(self, method_name, class_name, subclass_name=None, fold_number=None, surfix=None):
@@ -310,6 +353,7 @@ class MemoryBuffer(Buffer):
             key += '__{}'.format(surfix)
         
         self.traces_.update({key: copy.deepcopy(trace)})
+        self.save_record(genre='traces', type_name=filename, name=None, key=None, fold_number=None, train_test=None, surfix=surfix)
 
 
     def read_bayesian_estimation_trace(self, group1_name, group2_name, surfix=None):
