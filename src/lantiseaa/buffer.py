@@ -206,9 +206,9 @@ class LocalBuffer(BaseBuffer):
     def reset_path(self, project_path=None, subfolder=''):
         """Reset the default project path and the subfolder name for saving/reading data and results
 
-        If the project_path is not given, the 'LanTiSEAA' folder will be set as the project_path in default.
-        If the subfolder is not given, all savings/readings will be done from the root 'data', 'results', 
-        'figure' and 'classes' folders in default (this can be override on each save/read method).
+        If the project_path is not given, the parent of the 'LanTiSEAA' folder will be set as the 
+        project_path in default. If the subfolder is not given, all savings/readings will be done from 
+        the root 'data', 'results', 'figure' and 'classes' folders in default (this can be override on each save/read method).
 
         Parameters
         ----------
@@ -222,21 +222,21 @@ class LocalBuffer(BaseBuffer):
         """
         if project_path == None:
             # Assume this file is under '../workspace/LanTiSEAA/src/lantiseaa', in default set '../workspace' as the project path
-            self.project_path_ = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+            self.project_path = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                              '../../..')
                                 )
         else:
             if os.path.isdir(project_path):
-                self.project_path_ = project_path
+                self.project_path = project_path
             else:
                 raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), project_path)
         
-        self.subfolder_ = subfolder
+        self.subfolder = subfolder
 
 
     def project(self, filename, folder=''):
         """Return absolute path of file within folder hierarchy"""
-        return os.path.join(self.project_path_, folder, filename)
+        return os.path.join(self.project_path, folder, filename)
 
 
     def data(self, filename, subfolder=''):
@@ -286,7 +286,7 @@ class LocalBuffer(BaseBuffer):
             'surfix' in save_result, save_class and save_bayesian_estimation_trace
 
         '''
-        records = self.results("records.csv", subfolder=self.subfolder_)
+        records = self.results("records.csv", subfolder=self.subfolder)
         if not os.path.exists(records):
             with open(records, 'w', newline='') as csvfile:
                 csv.writer(csvfile, delimiter=',', quotechar='|').writerow(['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix'])
@@ -297,7 +297,7 @@ class LocalBuffer(BaseBuffer):
 
     def read_records(self):
         '''Read the records stored in "records.csv" under results folder.'''
-        records = self.results("records.csv", subfolder=self.subfolder_)
+        records = self.results("records.csv", subfolder=self.subfolder)
         if not os.path.exists(records):
             return None
         else:
@@ -332,8 +332,8 @@ class LocalBuffer(BaseBuffer):
 
         '''
         # create the directory if not exist
-        if not os.path.isdir(self.results('', self.subfolder_)):
-            os.mkdir(self.results('', self.subfolder_))
+        if not os.path.isdir(self.results('', self.subfolder)):
+            os.mkdir(self.results('', self.subfolder))
 
         if data_name is not None:
             data_type += '__{}'.format(data_name)
@@ -345,7 +345,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             key += '__{}'.format(surfix)
 
-        df.to_hdf(self.results('{}.hdf'.format(data_type), self.subfolder_), key)
+        df.to_hdf(self.results('{}.hdf'.format(data_type), self.subfolder), key)
         self.save_record(genre='result', type_name=data_type, name=data_name, key=key, fold_number=fold_number, train_test=train_test, surfix=surfix)
 
 
@@ -383,7 +383,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             key += '__{}'.format(surfix)
         
-        return pd.read_hdf(self.results('{}.hdf'.format(data_type), self.subfolder_), key)
+        return pd.read_hdf(self.results('{}.hdf'.format(data_type), self.subfolder), key)
 
 
     def save_class(self, c, method_name, class_name, subclass_name=None, fold_number=None, surfix=None):
@@ -411,8 +411,8 @@ class LocalBuffer(BaseBuffer):
 
         '''
         # create the directory if not exist
-        if not os.path.isdir(self.classes('', self.subfolder_)):
-            os.mkdir(self.classes('', self.subfolder_))
+        if not os.path.isdir(self.classes('', self.subfolder)):
+            os.mkdir(self.classes('', self.subfolder))
         
         filename = '{}__{}'.format(method_name, class_name)
 
@@ -423,7 +423,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             filename += '__{}'.format(surfix)
 
-        joblib.dump(c, self.classes(filename, self.subfolder_))
+        joblib.dump(c, self.classes(filename, self.subfolder))
         self.save_record(genre='class', type_name=method_name, name=class_name, key=subclass_name, fold_number=fold_number, train_test=None, surfix=surfix)
 
 
@@ -457,7 +457,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             filename += '__{}'.format(surfix)
 
-        return joblib.load(self.classes(filename, self.subfolder_))
+        return joblib.load(self.classes(filename, self.subfolder))
 
     
     def save_bayesian_estimation_trace(self, trace, group1_name, group2_name, surfix=None):
@@ -483,7 +483,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             filename += '__{}'.format(surfix)
         
-        joblib.dump(trace, self.classes(filename, self.subfolder_))
+        joblib.dump(trace, self.classes(filename, self.subfolder))
         self.save_record(genre='traces', type_name=filename, name=None, key=None, fold_number=None, train_test=None, surfix=surfix)
 
 
@@ -507,7 +507,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             filename += '__{}'.format(surfix)
         
-        return joblib.load(self.classes(filename, self.subfolder_))
+        return joblib.load(self.classes(filename, self.subfolder))
 
 
 
