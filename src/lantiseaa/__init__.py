@@ -46,7 +46,7 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
 
     Methods
     -------
-    get_combined_features(self, fold_number=None, train_test='train', surfix=None)
+    get_combined_features(self, train_test='train', surfix=None)
         Get features from the methods in feature_groups_ attribute and combine
 
     get_classes(self, classes=None, clf=None)
@@ -123,13 +123,11 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
         self.flags_ = {'baseline_prediction_given_in_fit': False}
     
 
-    def get_combined_features(self, fold_number=None, train_test='train', surfix=None):
+    def get_combined_features(self, train_test='train', surfix=None):
         '''Get features from the methods in feature_groups_ attribute and combine
 
         Parameters
         ----------
-        fold_number : int
-            the targeted fold to retrieve features from
         
         train_test : str
             the targeted train/test set to retrieve features from
@@ -140,7 +138,7 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
         '''
         features = []
         for feature_group in self.feature_groups_:
-            features.append(self.buffer.read_feature_set(feature_group, fold_number=None, train_test=train_test, surfix=None))
+            features.append(self.buffer.read_feature_set(feature_group, fold_number=None, train_test=train_test, surfix=surfix))
         return pd.concat(features, axis=1)
 
 
@@ -250,7 +248,7 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
             self.feature_groups_.append(transformer.name)
 
         # combine features
-        X_combined = self.get_combined_features(fold_number=None, train_test='train', surfix=None)
+        X_combined = self.get_combined_features(train_test='train', surfix=None)
         combined_name = "_".join(self.feature_groups_)
 
         # select and save relevant features 
@@ -329,7 +327,7 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
             self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='test', surfix=surfix)
             
         # combine features and select relevant features
-        X_combined = self.get_combined_features(fold_number=None, train_test='test', surfix=surfix)
+        X_combined = self.get_combined_features(train_test='test', surfix=surfix)
         return X_combined[self.relevant_features_.feature]
 
 
@@ -506,7 +504,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             meta_clf_fit_kwargs={}, meta_clf_predict_kwargs={}, meta_clf_predict_proba_kwargs={})
         Perform the iterative stacking procedure and fit on the complete training data set
 
-    get_combined_features(self, fold_number=None, train_test='train', surfix=None)
+    get_combined_features(self, train_test='train', surfix=None)
         Get features from the methods in feature_groups_ attribute and combine
 
     get_classes(self, classes=None, clf=None)
@@ -608,6 +606,11 @@ class IterativeLanTiSEAA(LanTiSEAA):
             assert (cv >= 5), "Number of folds cannot be less than 5 to allow accurate statistical tests."
             cv = StratifiedKFold(n_splits=cv, shuffle=True, random_state=self.random_state)
         self.cv = cv
+
+        self.dataset_independent_ts_ = []
+        for transformer in self.ts_transformers:
+            if isinstance(transformer, BaseDatasetIndependentTSTransformer):
+                self.dataset_independent_ts_.append(transformer.name)
 
 
     def fold_train_test(self, fold, X, y):
@@ -785,6 +788,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             if isinstance(transformer, BaseDatasetIndependentTSTransformer):
                 logging.info("Computing {} time series (data independent).".format(transformer.name))
                 # map texts into time series
+                transformer.fit(X.values)
                 time_series = transformer.transform(X.values)
                 # extract and save time series features
                 ts_features = self.feature_extractor.extract_features(time_series)
@@ -847,7 +851,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
                 pred_test = self.buffer.read_prediction(method_name='baseline', fold_number=fold[0], train_test='test')
             else:
                 first_transformer = self.ts_transformers[0]
-                self.feature_groups_.append(first_transformer.name)
+                if first_transformer.name not in self.feature_groups_:
+                    self.feature_groups_.append(first_transformer.name)
                 # get ts features
                 if isinstance(first_transformer, BaseDatasetIndependentTSTransformer):
                     ts_features = self.buffer.read_feature_set(method_name=first_transformer.name, train_test='train')
@@ -865,7 +870,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
                 self.meta_classifier.fit(X_train_relevant, y_train, **meta_clf_fit_kwargs)
                 self.buffer.save_class(self.meta_classifier, method_name='meta_classifier', 
                                             class_name=self.meta_classifier.__class__.__name__, 
-                                            fold_number=fold[0], suffix=first_transformer.name)
+                                            fold_number=fold[0], surfix=first_transformer.name)
                 if self.use_predict_proba:
                     meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
                     pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
@@ -902,11 +907,28 @@ class IterativeLanTiSEAA(LanTiSEAA):
                     for fold in self.fold_indices_.iterrows():
                         # split train test
                         _, _, y_train, y_test = self.fold_train_test(fold, X, y)
-                        # get features and combine
-                        X_train_current_best = self.buffer.read_feature_set(method_name=current_best, fold_number=fold[0], train_test='train')
-                        X_test_current_best = self.buffer.read_feature_set(method_name=current_best, fold_number=fold[0], train_test='test')
-                        X_train_to_add = self.buffer.read_feature_set(method_name=transformer.name, fold_number=fold[0], train_test='train')
-                        X_test_to_add = self.buffer.read_feature_set(method_name=transformer.name, fold_number=fold[0], train_test='test')
+                        # get current best features
+                        features_train_current_best = []
+                        features_test_current_best = []
+                        for feature_group in self.feature_groups_:
+                            if feature_group not in self.dataset_independent_ts_:
+                                features_train_current_best.append(self.buffer.read_feature_set(method_name=feature_group, fold_number=fold[0], train_test='train'))
+                                features_test_current_best.append(self.buffer.read_feature_set(method_name=feature_group, fold_number=fold[0], train_test='test'))
+                            else:
+                                ts_features = self.buffer.read_feature_set(method_name=feature_group, train_test='train')
+                                features_train_current_best.append(ts_features.iloc[fold[1].train].reset_index(drop=True))
+                                features_test_current_best.append(ts_features.iloc[fold[1].test].reset_index(drop=True))
+                        X_train_current_best = pd.concat(features_train_current_best, axis=1)
+                        X_test_current_best = pd.concat(features_test_current_best, axis=1)
+                        # get the features to append
+                        if isinstance(transformer, BaseDatasetIndependentTSTransformer):
+                            ts_features = self.buffer.read_feature_set(method_name=transformer.name, train_test='train')
+                            X_train_to_add = ts_features.iloc[fold[1].train].reset_index(drop=True)
+                            X_test_to_add = ts_features.iloc[fold[1].test].reset_index(drop=True)
+                        else:
+                            X_train_to_add = self.buffer.read_feature_set(method_name=transformer.name, fold_number=fold[0], train_test='train')
+                            X_test_to_add = self.buffer.read_feature_set(method_name=transformer.name, fold_number=fold[0], train_test='test')
+                        # combine features
                         X_train_combined = pd.concat([X_train_current_best, X_train_to_add], axis=1)
                         X_test_combined = pd.concat([X_test_current_best, X_test_to_add], axis=1)
                         # select and save relevant features 
@@ -918,7 +940,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
                         self.meta_classifier.fit(X_train_relevant, y_train, **meta_clf_fit_kwargs)
                         self.buffer.save_class(self.meta_classifier, method_name='meta_classifier', 
                                                class_name=self.meta_classifier.__class__.__name__, 
-                                               fold_number=fold[0], suffix=combined_name)
+                                               fold_number=fold[0], surfix=combined_name)
                         if self.use_predict_proba:
                             meta_clf_pred_classes = self.get_classes(classes, self.meta_classifier)
                             pred_train = pd.DataFrame(self.meta_classifier.predict_proba(X_train_relevant, **meta_clf_predict_proba_kwargs), columns=meta_clf_pred_classes)
@@ -940,12 +962,12 @@ class IterativeLanTiSEAA(LanTiSEAA):
                     # bayesian estimation
                     trace = self.bayesian_estimation(current_best_scores.test.values, evaluation_score.test.values, current_best, combined_name)
                     self.buffer.save_bayesian_estimation_trace(trace, current_best, combined_name)
-                    func_dict = {
-                        'low': lambda x: np.percentile(x, fdr_level_bayesian*50),
-                        'mean': lambda x: np.mean(x),
-                        'high': lambda x: np.percentile(x, 100-fdr_level_bayesian*50)
-                    }
-                    trace_summary = pm.summary(trace, var_names=['difference of means'], stat_funcs=func_dict, extend=False)
+                    func_dict = func_dict = [
+                        lambda x: pd.Series(np.percentile(x, fdr_level_bayesian*50), name='low'),
+                        lambda x: pd.Series(np.mean(x, 0), name='mean'),
+                        lambda x: pd.Series(np.percentile(x, 100-fdr_level_bayesian*50), name='high'),
+                    ]
+                    trace_summary = pm.summary(trace, varnames=['difference of means'], stat_funcs=func_dict, extend=False)
                     effectiveness.append((transformer.name, np.absolute(trace_summary.loc['difference of means']['mean'])))
                     # Wilcoxon Signed Rank Test
                     if wilcoxon(current_best_scores.test.values, evaluation_score.test.values).pvalue <= fdr_level_wilcoxon: # Wilcoxon Signed Rank Test passed
@@ -965,6 +987,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             if isinstance(transformer, BaseDatasetDependentTSTransformer) and (transformer.name in self.feature_groups_):
                 logging.info("Computing {} time series (data dependent).".format(transformer.name))
                 # map texts into time series
+                transformer.fit(X.values)
                 time_series = transformer.transform(X.values)
                 # extract and save time series features
                 ts_features = self.feature_extractor.extract_features(time_series)
@@ -984,7 +1007,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             self.buffer.save_prediction(pred, method_name='baseline', train_test='train')
         
         # combine features
-        X_combined = self.get_combined_features(fold_number=None, train_test='train', surfix=None)
+        X_combined = self.get_combined_features(train_test='train', surfix=None)
         combined_name = "_".join(self.feature_groups_)
 
         # select and save relevant features 
