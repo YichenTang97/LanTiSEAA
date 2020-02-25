@@ -300,7 +300,7 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
             (default is an empty dictionary).
         
         """
-        assert (baseline_prediction is None and self.flags_['baseline_prediction_given_in_fit'] == True), "baseline_prediction cannot be None if it was used in fit."
+        assert not (baseline_prediction is None and self.flags_['baseline_prediction_given_in_fit'] == True), "baseline_prediction cannot be None if it was used in fit."
         if 'baseline' in self.feature_groups_:
             if baseline_prediction is not None:
                 if not isinstance(baseline_prediction, pd.DataFrame):
