@@ -10,7 +10,7 @@ from sklearn.ensemble import GradientBoostingClassifier
 from pkg_resources import get_distribution, DistributionNotFound
 from lantiseaa.buffer import BaseBuffer, MemoryBuffer, LocalBuffer
 from lantiseaa.extractor import BaseTSFeatureExtractor, TsfreshTSFeatureExtractor
-from lantiseaa.nlp import BOWMNB
+from lantiseaa.baseline import BOWMNB
 from lantiseaa.ts import *
 
 try:
