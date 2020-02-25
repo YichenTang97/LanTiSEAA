@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import pandas as pd
+import multiprocessing
 from abc import ABC, abstractmethod
 from tsfresh import extract_features, extract_relevant_features, select_features
 from tsfresh.utilities.dataframe_functions import impute
@@ -28,23 +29,29 @@ class BaseTSFeatureExtractor(ABC):
 
 class TsfreshTSFeatureExtractor(BaseTSFeatureExtractor):
     
-    def __init__(self, fdr_level=0.001):
+    def __init__(self, fdr_level=0.001, n_jobs=multiprocessing.cpu_count()):
         '''Construct a TsfreshTSFeatureExtractor
 
         Parameters
         ----------
         fdr_level : float, optional
             The theoretical expected percentage of irrelevant features among all selected features
+        
+        n_jobs : int, optional
+            The number of threads to use for extracting time serie features and calculating feature 
+            relevance table (default is the total number of cores on the computer)
+
         '''
         super().__init__()
         self.fdr_level = fdr_level
+        self.n_jobs = n_jobs
 
 
-    def extract_features(self, ts, column_id='id', impute_function=impute, default_fc_parameters=ComprehensiveFCParameters(), n_jobs=-1, show_warnings=False, profile=False):
+    def extract_features(self, ts, column_id='id', impute_function=impute, default_fc_parameters=ComprehensiveFCParameters(), show_warnings=False, profile=False):
         '''Extract all possible features from ts using tsfresh's extract_features method'''
         return extract_features(ts, column_id=column_id, impute_function=impute_function,
                                 default_fc_parameters=default_fc_parameters,
-                                n_jobs=n_jobs, show_warnings=show_warnings, profile=profile)
+                                n_jobs=self.n_jobs, show_warnings=show_warnings, profile=profile)
 
     def select_relevant_features(self, X, y):
         '''Select statistically significant features while computing the relevance of these features.'''
@@ -52,7 +59,7 @@ class TsfreshTSFeatureExtractor(BaseTSFeatureExtractor):
         relevance_tables = list()
         for label in np.unique(y):
             y_binary = (y == label)
-            relevance_tables.append((label, calculate_relevance_table(X, y_binary, fdr_level=self.fdr_level)))
+            relevance_tables.append((label, calculate_relevance_table(X, y_binary, fdr_level=self.fdr_level, n_jobs=self.n_jobs)))
 
         # concatenate relevance tables
         relevance_table_concat = pd.concat([table for (lable, table) in relevance_tables])
