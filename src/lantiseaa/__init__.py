@@ -7,6 +7,7 @@ from scipy.stats import wilcoxon
 from sklearn.metrics import log_loss
 from sklearn.model_selection import StratifiedKFold
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.base import BaseEstimator, ClassifierMixin
 from pkg_resources import get_distribution, DistributionNotFound
 from lantiseaa.buffer import BaseBuffer, MemoryBuffer, LocalBuffer
 from lantiseaa.extractor import BaseTSFeatureExtractor, TsfreshTSFeatureExtractor
@@ -23,7 +24,7 @@ finally:
     del get_distribution, DistributionNotFound
 
 
-class LanTiSEAA():
+class LanTiSEAA(BaseEstimator, ClassifierMixin):
     """
     The LanTiSEAA class uses time series transformers, feature extractor and baseline method 
     (or baseline predictions) to transform texts; extract, combine, and select features; 
