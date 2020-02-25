@@ -286,6 +286,12 @@ class LocalBuffer(BaseBuffer):
             'surfix' in save_result, save_class and save_bayesian_estimation_trace
 
         '''
+        # create the directory if not exist
+        if not os.path.isdir(self.results('')):
+            os.mkdir(self.results(''))
+        if not os.path.isdir(self.results('', self.subfolder)):
+            os.mkdir(self.results('', self.subfolder))
+        
         records = self.results("records.csv", subfolder=self.subfolder)
         if not os.path.exists(records):
             with open(records, 'w', newline='') as csvfile:
@@ -332,6 +338,8 @@ class LocalBuffer(BaseBuffer):
 
         '''
         # create the directory if not exist
+        if not os.path.isdir(self.results('')):
+            os.mkdir(self.results(''))
         if not os.path.isdir(self.results('', self.subfolder)):
             os.mkdir(self.results('', self.subfolder))
 
@@ -411,6 +419,8 @@ class LocalBuffer(BaseBuffer):
 
         '''
         # create the directory if not exist
+        if not os.path.isdir(self.classes('')):
+            os.mkdir(self.classes(''))
         if not os.path.isdir(self.classes('', self.subfolder)):
             os.mkdir(self.classes('', self.subfolder))
         
@@ -423,7 +433,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             filename += '__{}'.format(surfix)
 
-        joblib.dump(c, self.classes(filename, self.subfolder))
+        joblib.dump(c, self.classes('{}.pkl'.format(filename), self.subfolder))
         self.save_record(genre='class', type_name=method_name, name=class_name, key=subclass_name, fold_number=fold_number, train_test=None, surfix=surfix)
 
 
@@ -457,7 +467,7 @@ class LocalBuffer(BaseBuffer):
         if surfix is not None:
             filename += '__{}'.format(surfix)
 
-        return joblib.load(self.classes(filename, self.subfolder))
+        return joblib.load(self.classes('{}.pkl'.format(filename), self.subfolder))
 
     
     def save_bayesian_estimation_trace(self, trace, group1_name, group2_name, surfix=None):
@@ -478,6 +488,12 @@ class LocalBuffer(BaseBuffer):
             surfix to add to the end of the file name, also to identify the trace object (default is None)
 
         '''
+        # create the directory if not exist
+        if not os.path.isdir(self.classes('')):
+            os.mkdir(self.classes(''))
+        if not os.path.isdir(self.classes('', self.subfolder)):
+            os.mkdir(self.classes('', self.subfolder))
+        
         filename = 'traces__{}__{}'.format(group1_name, group2_name)
 
         if surfix is not None:
