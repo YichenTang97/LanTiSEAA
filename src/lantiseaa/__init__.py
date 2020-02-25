@@ -241,7 +241,8 @@ class LanTiSEAA():
         for transformer in self.ts_transformers:
             logging.info("Computing {} time series.".format(transformer.name))
             # map texts into time series
-            time_series = transformer.transform(X)
+            transformer.fit(X.values)
+            time_series = transformer.transform(X.values)
             # extract and save time series features
             ts_features = self.feature_extractor.extract_features(time_series)
             self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='train')
@@ -321,7 +322,7 @@ class LanTiSEAA():
         for transformer in self.ts_transformers:
             logging.info("Computing {} time series.".format(transformer.name))
             # map texts into time series
-            time_series = transformer.transform(X)
+            time_series = transformer.transform(X.values)
             # extract and save time series features
             ts_features = self.feature_extractor.extract_features(time_series)
             self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='test', surfix=surfix)
@@ -783,7 +784,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             if isinstance(transformer, BaseDatasetIndependentTSTransformer):
                 logging.info("Computing {} time series (data independent).".format(transformer.name))
                 # map texts into time series
-                time_series = transformer.transform(X)
+                time_series = transformer.transform(X.values)
                 # extract and save time series features
                 ts_features = self.feature_extractor.extract_features(time_series)
                 self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='train')
@@ -822,9 +823,9 @@ class IterativeLanTiSEAA(LanTiSEAA):
                 if isinstance(transformer, BaseDatasetDependentTSTransformer):
                     logging.info("Computing {} time series (data dependent) for fold {}.".format(transformer.name, fold[0]))
                     # map texts into time series
-                    transformer.fit(X_train)
-                    ts_train = transformer.transform(X_train)
-                    ts_test = transformer.transform(X_test)
+                    transformer.fit(X_train.values)
+                    ts_train = transformer.transform(X_train.values)
+                    ts_test = transformer.transform(X_test.values)
                     self.buffer.save_class(transformer, method_name=transformer.name, class_name=transformer.__class__.__name__, fold_number=fold[0]) # TODO test if this works with LocalBuffer
                     # extract and save time series features
                     ts_train_features = self.feature_extractor.extract_features(ts_train)
@@ -963,7 +964,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
             if isinstance(transformer, BaseDatasetDependentTSTransformer) and (transformer.name in self.feature_groups_):
                 logging.info("Computing {} time series (data dependent).".format(transformer.name))
                 # map texts into time series
-                time_series = transformer.transform(X)
+                time_series = transformer.transform(X.values)
                 # extract and save time series features
                 ts_features = self.feature_extractor.extract_features(time_series)
                 self.buffer.save_feature_set(ts_features, method_name=transformer.name, train_test='train')

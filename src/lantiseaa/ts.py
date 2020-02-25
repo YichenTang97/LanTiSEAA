@@ -48,7 +48,7 @@ class TokenLenFreqTransformer(BaseDatasetIndependentTSTransformer):
         self.max_length = max_length
         self.split_function = split_function
     
-    def fit(self, X, y):
+    def fit(self, X, y=None):
         """ Not used
         """
 
@@ -127,7 +127,7 @@ class TokenLenSeqTransformer(BaseDatasetIndependentTSTransformer):
         self.name = name
         self.split_function = split_function
     
-    def fit(self, X, y):
+    def fit(self, X, y=None):
         """ Not used
         """
 
