@@ -307,7 +307,7 @@ class LocalBuffer(BaseBuffer):
         if not os.path.exists(records):
             return None
         else:
-            return pd.read_csv(records).sort_values(by=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix']).reset_index(drop=True)
+            return pd.read_csv(records).sort_values(by=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix']).drop_duplicates().reset_index(drop=True).fillna('')
 
 
     def save_result(self, df, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
@@ -548,7 +548,7 @@ class MemoryBuffer(BaseBuffer):
 
 
     def read_records(self):
-        return self.records_.sort_values(by=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix']).reset_index(drop=True)
+        return self.records_.sort_values(by=['Genre', 'Type/Method', 'Data/Class', 'Key/Subclass', 'Fold', 'Train/Test', 'Surfix']).drop_duplicates().reset_index(drop=True).fillna('')
     
 
     def save_result(self, df, key, data_type='data', data_name=None, fold_number=None, train_test=None, surfix=None):
