@@ -21,9 +21,6 @@ import logging
 
 from lantiseaa import __version__
 
-__author__ = "Carl-Tang"
-__copyright__ = "Carl-Tang"
-__license__ = "mit"
 
 _logger = logging.getLogger(__name__)
 
