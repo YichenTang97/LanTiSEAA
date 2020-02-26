@@ -101,7 +101,9 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
             is lantiseaa.nlp.BOWMNB).
 
         use_predict_proba : boolean, optional
-            either to use predict_proba or predict for the baseline to make predictions
+            either to use predict_proba or predict for the baseline to make predictions. Note that if 
+            use_predict_proba is set to False, you need to encode y labels into integers for the 
+            meta-classifier to work, if the meta-classifier only takes integer features (default is True)
 
         meta_classifier : Classifier, optional
             the meta-classifier to be trained on combined features and make predictions (default is 
@@ -573,7 +575,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
         
         use_predict_proba : boolean, optional
             use predict_proba for the baseline method, meta classifier, and metric. It will be applied to all
-            three (default is True)
+            three. Note that if use_predict_proba is set to False, you need to encode y labels into integers
+            for the meta-classifier to work, if the meta-classifier only takes integer features (default is True)
         
         metric : sklearn.metric, optional
             the metric used to score the predictions (default is log_loss)
@@ -725,7 +728,11 @@ class IterativeLanTiSEAA(LanTiSEAA):
             the corresponding values will be retrieved from self.baseline_classifier.classes_ and 
             self.meta_classifier.classes_ if exist (default is None).
 
-        fdr_level : 
+        fdr_level_bayesian : float, optional
+            the expected false estimation rate for bayesian estimation (default is 0.05)
+
+        fdr_level_wilcoxon : float, optional
+            the expected false estimation rate for Wilcoxon Signed Rank Test (default is 0.05)
 
         baseline_clf_fit_kwargs : dict, Optional
             the kwargs to be passed to the baseline classifier when calling fit. Ignored if 
