@@ -75,7 +75,7 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
     """
 
     def __init__(self, \
-                 ts_transformers=[TokenLenFreqTransformer(), TokenLenSeqTransformer(), WordCntVecTransformer(), TokenFreqTransformer(), TokenFreqRankTransformer()], \
+                 ts_transformers=[TokenLenSeqTransformer(), TokenFreqSeqTransformer(), TokenRankSeqTransformer(), TokenLenDistTransformer(), TokenRankDistTransformer()], \
                  feature_extractor=TsfreshTSFeatureExtractor(), baseline_classifier=BOWMNB(), \
                  use_predict_proba=True, \
                  meta_classifier=GradientBoostingClassifier(), buffer=MemoryBuffer()):
@@ -86,8 +86,8 @@ class LanTiSEAA(BaseEstimator, ClassifierMixin):
         ts_transformers : List, optional
             a list of ts_transformers. The ts_transformers will be used to map the texts and time series 
             features will be extracted from each type of the time series and then been combined and selected
-            (in default the list is five transformers - TokenLenFreqTransformer, TokenLenSeqTransformer, 
-            WordCntVecTransformer, TokenFreqTransformer, and TokenFreqRankTransformer - all under 
+            (in default the list is five transformers - TokenLenSeqTransformer, TokenFreqSeqTransformer, 
+            TokenRankSeqTransformer, TokenLenDistTransformer, and TokenRankDistTransformer - all under 
             lantiseaa.ts package).
         
         feature_extractor : lantiseaa.extractor.BaseTSFeatureExtractor, optional
@@ -530,7 +530,7 @@ class IterativeLanTiSEAA(LanTiSEAA):
     """
 
     def __init__(self, \
-                 ts_transformers=[TokenLenFreqTransformer(), TokenLenSeqTransformer(), WordCntVecTransformer(), TokenFreqTransformer(), TokenFreqRankTransformer()], \
+                 ts_transformers=[TokenLenSeqTransformer(), TokenFreqSeqTransformer(), TokenRankSeqTransformer(), TokenLenDistTransformer(), TokenRankDistTransformer()], \
                  feature_extractor=TsfreshTSFeatureExtractor(), baseline_classifier=BOWMNB(), \
                  meta_classifier=GradientBoostingClassifier(), cv=None, \
                  metric=log_loss, greater_is_better=False, \
@@ -543,8 +543,8 @@ class IterativeLanTiSEAA(LanTiSEAA):
         ts_transformers : List, optional
             a list of ts_transformers. The ts_transformers will be used to map the texts and time series 
             features will be extracted from each type of the time series and then been combined and selected
-            (in default the list is five transformers - TokenLenFreqTransformer, TokenLenSeqTransformer, 
-            WordCntVecTransformer, TokenFreqTransformer, and TokenFreqRankTransformer - all under 
+            (in default the list is five transformers - TokenLenSeqTransformer, TokenFreqSeqTransformer, 
+            TokenRankSeqTransformer, TokenLenDistTransformer, and TokenRankDistTransformer - all under 
             lantiseaa.ts package).
         
         feature_extractor : lantiseaa.extractor.BaseTSFeatureExtractor, optional
