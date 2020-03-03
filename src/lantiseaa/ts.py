@@ -423,7 +423,7 @@ class TokenFreqTransformer(BaseDatasetDependentTSTransformer):
             if len(frequencies) == 0:
                 seq.append(pd.DataFrame({ self.name : np.array([0]) }))
             else:
-                seq.append(pd.DataFrame({ self.name : np.array(frequencies) }))
+                seq.append(pd.DataFrame({ self.name : np.log1p(np.array(frequencies)) }))
             seq[-1]['id'] = counter
         return pd.concat(seq)
 
@@ -561,7 +561,7 @@ class TokenFreqRankTransformer(BaseDatasetDependentTSTransformer):
             if len(ranks) == 0:
                 seq.append(pd.DataFrame({ self.name : np.array([0]) }))
             else:
-                seq.append(pd.DataFrame({ self.name : np.array(ranks) }))
+                seq.append(pd.DataFrame({ self.name : np.log1p(np.array(ranks)) }))
                 
             seq[-1]['id'] = counter
             
