@@ -3,10 +3,6 @@
 import pytest
 from lantiseaa.skeleton import fib
 
-__author__ = "Carl-Tang"
-__copyright__ = "Carl-Tang"
-__license__ = "mit"
-
 
 def test_fib():
     assert fib(1) == 1
