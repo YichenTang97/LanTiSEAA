@@ -171,6 +171,8 @@ class CSKSVM():
         self.n_grams = n_grams
 
     def fit(self, X, y, sample_splits=100, random_state=42):
+        X = X.values
+        y = y.values
         # take sample train and validate sets
         if sample_splits < 2:
             raise Exception("sample_splits cannot be smaller than 2")
