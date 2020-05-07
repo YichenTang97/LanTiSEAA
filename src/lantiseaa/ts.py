@@ -1,5 +1,6 @@
 import queue
 import logging
+import re
 import numpy as np
 import pandas as pd
 from nltk.tokenize import word_tokenize
@@ -513,10 +514,10 @@ class TokenRankDistTransformer(BaseDatasetDependentTSTransformer):
         self.name = name
         self.length = 1000
         # constent variables
-        self.analyzer = CountVectorizer().build_analyzer()
+        self.re = re.compile(r'(?u)\b\w\w+\b')
     
     def stemmed_analyzer(self, text):
-        return [ps.stem(word) for word in self.analyzer(text)]
+        return [ps.stem(word) for word in self.re.findall(text.lower())]
     
     def fit(self, X, y=None):
         """ Fit the CountVectorizer with the texts in X.
